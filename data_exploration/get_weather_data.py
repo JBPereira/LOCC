@@ -234,7 +234,27 @@ class WaterLevelImporter(DataImporter):
             raise NoDataDownloadedException()
 
 
+class DataMerger:
 
+    def __init__(self, *data_importer_instances):
+
+        number_of_importers = len(data_importer_instances)
+
+        if number_of_importers < 2:
+
+            raise ValueError('Constructor requires at least 2 Data Importer Instances')
+
+        for importer in data_importer_instances:
+
+            if isinstance(importer, WaterLevelImporter):
+
+                self.water_importer = importer
+
+            elif isinstance(importer, WeatherDataImporter):
+
+                self.weather_importer = importer
+
+    
 
 
 
