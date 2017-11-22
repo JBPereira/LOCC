@@ -6,6 +6,7 @@ import os
 from functools import reduce
 import operator
 from multiprocessing import Pool, cpu_count
+from .custom_importer_exceptions import DataNotUpdatedException, NoDataDownloadedException
 
 
 class DataImporter:
@@ -233,17 +234,7 @@ class WaterLevelImporter(DataImporter):
             raise NoDataDownloadedException()
 
 
-class DataNotUpdatedException(Exception):
 
-    def __init__(self, message):
-
-        super(DataNotUpdatedException, self).__init__(message)
-
-
-class NoDataDownloadedException(Exception):
-    def __init__(self):
-        message = 'No data downloaded yet'
-        super(NoDataDownloadedException, self).__init__(message)
 
 
 
