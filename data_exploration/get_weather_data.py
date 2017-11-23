@@ -7,6 +7,7 @@ from functools import reduce
 import operator
 from multiprocessing import Pool, cpu_count
 from .custom_importer_exceptions import DataNotUpdatedException, NoDataDownloadedException
+import utm
 
 
 class DataImporter:
@@ -143,7 +144,7 @@ class WeatherDataImporter(DataImporter):
 class WaterLevelImporter(DataImporter):
 
     """
-    Importer of Water Data
+    Importer of Netherlands Water Data
     """
 
     def __init__(self):
@@ -160,6 +161,8 @@ class WaterLevelImporter(DataImporter):
                              0, 'dateTime'], 'value': ['properties', 'measurements', 0, 'latestValue']}
 
         self.update_time = 10
+
+        self.utm_zone_code = [31, 'U']
 
     def get_data(self, data_to_get):
 
@@ -254,7 +257,20 @@ class DataMerger:
 
                 self.weather_importer = importer
 
-    
+    def convert_water_coordinates_to_lat_lon(self):
+
+        utm_code = self.water_importer.utm_zone_code
+
+        for measurement, data in self.water_importer.actual_data.items():
+            self.water_importer.actual_data[measurement]['coordinates'] = \
+                data['coordinates'].apply(lambda x: utm.to_latlon(*x, *utm_code))
+
+    def merge_weather_and_water(self):
+
+        weather_data = self.weather_importer.actual_data
+
+
+
 
 
 
