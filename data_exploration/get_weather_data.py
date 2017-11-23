@@ -42,11 +42,11 @@ class DataImporter:
 
         if minutes_passed_since_last_update < self.update_time:
 
-            return True, None
+            return False, minutes_passed_since_last_update
 
         else:
 
-            return False, minutes_passed_since_last_update
+            return True, None
 
     def query_data(self, request_url):
 
@@ -55,8 +55,6 @@ class DataImporter:
         if can_update:
 
             data = requests.get(request_url).json()
-
-            self.last_update = datetime.datetime.now()
 
             return data, None
 
@@ -95,7 +93,7 @@ class WeatherDataImporter(DataImporter):
         self.update_time = 10
         self.request_url = 'https://api.buienradar.nl/data/public/1.1/jsonfeed'
 
-        self.actual_column_data = {'date_time': 'datum', 'latitude': 'lat',
+        self.data_columns = {'date_time': 'datum', 'latitude': 'lat',
                                    'longitude': 'lon', 'humidity': 'luchtvochtigheid',
                                    'temperature_10cm': 'temperatuur10cm', 'temperature': 'temperatuurGC',
                                    'wind_direction': 'windrichting', 'wind_direction_degrees': 'windrichtingGR',
@@ -112,6 +110,7 @@ class WeatherDataImporter(DataImporter):
         data, exception = self.query_data(self.request_url)
 
         if data:
+            self.last_update = datetime.datetime.now()
             data = data['buienradarnl']['weergegevens']
             self.latest_data = data
         else:
@@ -206,6 +205,8 @@ class WaterLevelImporter(DataImporter):
                 except DataNotUpdatedException:
                     return
 
+        self.last_update = datetime.datetime.now()
+
         data = dict(zip(self.request_param_list.keys(), data_list))
 
         self.latest_data = data
@@ -213,7 +214,7 @@ class WaterLevelImporter(DataImporter):
     def extract_actual_data_to_pd(self, data_to_extract):
 
         if self.latest_data:
-            raw_data = self.latest_data[data_to_extract]
+            raw_data = self.latest_data[data_to_extract]['features']
 
             actual_data = pd.DataFrame(columns=self.data_columns.keys())
 
@@ -231,7 +232,7 @@ class WaterLevelImporter(DataImporter):
                 else:
                     self.actual_data[data_to_extract] = actual_data
             else:
-                self.actual_data = dict((data_to_extract, actual_data))
+                self.actual_data = {data_to_extract: actual_data}
 
         else:
             raise NoDataDownloadedException()
