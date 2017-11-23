@@ -238,6 +238,11 @@ class WaterLevelImporter(DataImporter):
         else:
             raise custom_importer_exceptions.NoDataDownloadedException()
 
+    def extract_all_to_pd(self):
+
+        for measurement in self.request_param_list.keys():
+            self.extract_actual_data_to_pd(measurement)
+
 
 class DataMerger:
 
