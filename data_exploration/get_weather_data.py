@@ -6,8 +6,9 @@ import os
 from functools import reduce
 import operator
 from multiprocessing import Pool, cpu_count
-from .custom_importer_exceptions import DataNotUpdatedException, NoDataDownloadedException
+from . import custom_importer_exceptions
 import utm
+from scipy.spatial.distance import squareform, pdist
 
 
 class DataImporter:
@@ -114,7 +115,7 @@ class WeatherDataImporter(DataImporter):
             data = data['buienradarnl']['weergegevens']
             self.latest_data = data
         else:
-            raise DataNotUpdatedException(exception)
+            raise custom_importer_exceptions.DataNotUpdatedException(exception)
 
     def extract_actual_data_to_pd(self):
 
@@ -137,7 +138,7 @@ class WeatherDataImporter(DataImporter):
                 self.actual_data = actual_data
 
         else:
-            raise NoDataDownloadedException()
+            raise custom_importer_exceptions.NoDataDownloadedException()
 
 
 class WaterLevelImporter(DataImporter):
@@ -180,7 +181,7 @@ class WaterLevelImporter(DataImporter):
 
         else:
 
-            raise DataNotUpdatedException(exception)
+            raise custom_importer_exceptions.DataNotUpdatedException(exception)
 
     def get_all_water_data(self):
 
@@ -190,7 +191,7 @@ class WaterLevelImporter(DataImporter):
             p = Pool(cpu_number)
             try:
                 data_list = p.map(self.get_data, self.request_param_list.keys())
-            except DataNotUpdatedException:
+            except custom_importer_exceptions.DataNotUpdatedException:
                 p.terminate()
                 return
 
@@ -202,7 +203,7 @@ class WaterLevelImporter(DataImporter):
                 try:
 
                     data_list.append(self.get_data(measurement))
-                except DataNotUpdatedException:
+                except custom_importer_exceptions.DataNotUpdatedException:
                     return
 
         self.last_update = datetime.datetime.now()
@@ -235,7 +236,7 @@ class WaterLevelImporter(DataImporter):
                 self.actual_data = {data_to_extract: actual_data}
 
         else:
-            raise NoDataDownloadedException()
+            raise custom_importer_exceptions.NoDataDownloadedException()
 
 
 class DataMerger:
@@ -243,6 +244,8 @@ class DataMerger:
     def __init__(self, *data_importer_instances):
 
         number_of_importers = len(data_importer_instances)
+
+        self.importers = data_importer_instances
 
         if number_of_importers < 2:
 
@@ -265,6 +268,36 @@ class DataMerger:
         for measurement, data in self.water_importer.actual_data.items():
             self.water_importer.actual_data[measurement]['coordinates'] = \
                 data['coordinates'].apply(lambda x: utm.to_latlon(*x, *utm_code))
+
+    def compute_minimum_point_distance(self):
+
+        point_list = []
+
+        for importer in self.importers:
+
+            if isinstance(importer, WaterLevelImporter):
+
+                for measurement in importer.actual_data.values():
+                    coords = measurement['coordinates'].values
+                    point_list.extend(coords)
+
+            elif isinstance(importer, WeatherDataImporter):
+                lat = importer.actual_data['latitude'].apply(pd.to_numeric, args=('coerce',)).values
+                lon = importer.actual_data['longitude'].apply(pd.to_numeric, args=('coerce',)).values
+                point_list.extend(zip(lat, lon))
+
+        point_list = np.array(point_list)
+
+        print(point_list)
+
+        dist_matrix = squareform(pdist(point_list))
+        np.fill_diagonal(dist_matrix, np.inf)
+
+        min_point_distances = np.min(dist_matrix, axis=0)
+
+        return min_point_distances
+
+
 
     def merge_weather_and_water(self):
 
