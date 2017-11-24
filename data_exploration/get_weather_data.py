@@ -13,7 +13,6 @@ import math
 
 
 class DataImporter:
-
     """
     Base Class for Importers
     """
@@ -84,7 +83,6 @@ class DataImporter:
 
 
 class WeatherDataImporter(DataImporter):
-
     """
     Importer of Weather Data
     """
@@ -96,12 +94,12 @@ class WeatherDataImporter(DataImporter):
         self.request_url = 'https://api.buienradar.nl/data/public/1.1/jsonfeed'
 
         self.data_columns = {'date_time': 'datum', 'latitude': 'lat',
-                                   'longitude': 'lon', 'humidity': 'luchtvochtigheid',
-                                   'temperature_10cm': 'temperatuur10cm', 'temperature': 'temperatuurGC',
-                                   'wind_direction': 'windrichting', 'wind_direction_degrees': 'windrichtingGR',
-                                   'wind_speedBF': 'windsnelheidBF', 'wind_speedMS': 'windsnelheidMS',
-                                   'wind_blast': 'windstotenMS', 'visibility_meters': 'zichtmeters',
-                                   'sun_intensity': 'zonintensiteitWM2'}
+                             'longitude': 'lon', 'humidity': 'luchtvochtigheid',
+                             'temperature_10cm': 'temperatuur10cm', 'temperature': 'temperatuurGC',
+                             'wind_direction': 'windrichting', 'wind_direction_degrees': 'windrichtingGR',
+                             'wind_speedBF': 'windsnelheidBF', 'wind_speedMS': 'windsnelheidMS',
+                             'wind_blast': 'windstotenMS', 'visibility_meters': 'zichtmeters',
+                             'sun_intensity': 'zonintensiteitWM2'}
 
     def get_data(self):
 
@@ -143,7 +141,6 @@ class WeatherDataImporter(DataImporter):
 
 
 class WaterLevelImporter(DataImporter):
-
     """
     Importer of Netherlands Water Data
     """
@@ -159,7 +156,8 @@ class WaterLevelImporter(DataImporter):
                                    'water_drainage': 'waterafvoer'}
 
         self.data_columns = {'coordinates': ['geometry', 'coordinates'], 'datetime': ['properties', 'measurements',
-                             0, 'dateTime'], 'value': ['properties', 'measurements', 0, 'latestValue']}
+                                                                                      0, 'dateTime'],
+                             'value': ['properties', 'measurements', 0, 'latestValue']}
 
         self.update_time = 10
 
@@ -246,7 +244,6 @@ class WaterLevelImporter(DataImporter):
 
 
 class DataMerger:
-
     def __init__(self, *data_importer_instances):
 
         number_of_importers = len(data_importer_instances)
@@ -254,7 +251,6 @@ class DataMerger:
         self.importers = data_importer_instances
 
         if number_of_importers < 2:
-
             raise ValueError('Constructor requires at least 2 Data Importer Instances')
 
         for importer in data_importer_instances:
@@ -294,8 +290,6 @@ class DataMerger:
 
         point_list = np.array(point_list)
 
-        print(point_list)
-
         dist_matrix = squareform(pdist(point_list))
         np.fill_diagonal(dist_matrix, np.inf)
 
@@ -304,7 +298,31 @@ class DataMerger:
         min_point_distances_mean = np.mean(min_point_distances)
         min_point_distances_std = np.std(min_point_distances)
 
-        return min_point_idx, min_point_distances, min_point_distances_mean, min_point_distances_std
+        return min_point_idx, min_point_distances, point_list, \
+               min_point_distances_mean, min_point_distances_std
+
+    def organize_map_measurements(self):
+
+        point_list = {}
+
+        for importer in self.importers:
+
+            if isinstance(importer, WaterLevelImporter):
+
+                for measurement in importer.actual_data.values():
+                    coords = measurement['coordinates'].values
+                    coords = np.float32(coords)
+                    point_list = self.insert_into_point_list(coords, measurement, point_list)
+
+            elif isinstance(importer, WeatherDataImporter):
+
+                for measurement in importer.actual_data:
+                    lat = np.float32(measurement['latitude'])
+                    lon = np.float32(measurement['longitude'])
+                    coords = np.array([lat, lon])
+                    point_list = self.insert_into_point_list(coords, measurement, point_list)
+
+        return point_list
 
     @staticmethod
     def hash_point(point):
@@ -315,7 +333,7 @@ class DataMerger:
         :return: hash_string to map all nearby points to the same location
         """
 
-        rounded_lat = np.round(point[0]*100)/100
+        rounded_lat = np.round(point[0] * 100) / 100
 
         rounded_lon = np.round(point[1] * 100) / 100
 
@@ -353,6 +371,20 @@ class DataMerger:
         longitude = hash_string[3:5] + '.' + hash_string[5] + hash_string[7]
 
         return np.array([np.float(latitude), np.float(longitude)])
+
+    def insert_into_point_list(self, coords, point, point_list):
+
+        hash = self.hash_point(coords)
+
+        if hash not in point_list:
+
+            point_list[hash] = point
+
+        else:
+
+            point_list[hash].extend(point)
+
+        return point_list
 
     def merge_weather_and_water(self):
 
