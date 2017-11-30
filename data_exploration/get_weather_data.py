@@ -6,11 +6,10 @@ import os
 from functools import reduce
 import operator
 from multiprocessing import Pool, cpu_count
-from . import custom_importer_exceptions
+from .custom_importer_exceptions import NoDataDownloadedException, DataNotUpdatedException
 import utm
 from math import radians, cos, sin, asin, sqrt
 from scipy.cluster.hierarchy import fclusterdata
-
 
 
 class DataImporter:
@@ -115,7 +114,7 @@ class WeatherDataImporter(DataImporter):
             data = data['buienradarnl']['weergegevens']
             self.latest_data = data
         else:
-            raise custom_importer_exceptions.DataNotUpdatedException(exception)
+            raise DataNotUpdatedException(exception)
 
     def extract_actual_data_to_pd(self):
 
@@ -138,7 +137,7 @@ class WeatherDataImporter(DataImporter):
                 self.actual_data = actual_data
 
         else:
-            raise custom_importer_exceptions.NoDataDownloadedException()
+            raise NoDataDownloadedException()
 
 
 class WaterLevelImporter(DataImporter):
@@ -181,17 +180,17 @@ class WaterLevelImporter(DataImporter):
 
         else:
 
-            raise custom_importer_exceptions.DataNotUpdatedException(exception)
+            raise DataNotUpdatedException(exception)
 
     def get_all_water_data(self):
 
         cpu_number = cpu_count()
 
-        if cpu_number > 1:  # query the different measurements in parallel
+        if cpu_number > 100:  # query the different measurements in parallel
             p = Pool(cpu_number)
             try:
                 data_list = p.map(self.get_data, self.request_param_list.keys())
-            except custom_importer_exceptions.DataNotUpdatedException:
+            except DataNotUpdatedException:
                 p.terminate()
                 return
 
@@ -203,7 +202,7 @@ class WaterLevelImporter(DataImporter):
                 try:
 
                     data_list.append(self.get_data(measurement))
-                except custom_importer_exceptions.DataNotUpdatedException:
+                except DataNotUpdatedException:
                     return
 
         self.last_update = datetime.datetime.now()
@@ -216,16 +215,18 @@ class WaterLevelImporter(DataImporter):
 
         if self.latest_data:
             raw_data = self.latest_data[data_to_extract]['features']
-
             actual_data = pd.DataFrame(columns=self.data_columns.keys())
 
             for point in raw_data:
+
                 row = {}
 
                 for column, access in self.data_columns.items():
                     row[column] = self.get_from_dict(point, access)
 
                 actual_data = actual_data.append(row, ignore_index=True)
+
+            actual_data.rename(columns={'value': data_to_extract}, inplace=True)
 
             if self.actual_data:
                 if data_to_extract in self.actual_data:
@@ -236,7 +237,7 @@ class WaterLevelImporter(DataImporter):
                 self.actual_data = {data_to_extract: actual_data}
 
         else:
-            raise custom_importer_exceptions.NoDataDownloadedException()
+            raise NoDataDownloadedException()
 
     def extract_all_to_pd(self):
 
@@ -273,11 +274,13 @@ class DataMerger:
                 self.water_importer.actual_data[measurement]['coordinates'] = \
                     data['coordinates'].apply(lambda x: utm.to_latlon(*x, *utm_code))
             except ValueError:
-                raise Warning('Coordinates were already converted to [lat,lon]')
+                raise Warning('Coordinates were already converted to [lat, lon]')
 
     def compute_minimum_point_distance(self, clust_radius):
 
+        coords_list = []
         point_list = []
+        measurements = []
 
         for importer in self.importers:
 
@@ -285,17 +288,21 @@ class DataMerger:
 
                 for measurement in importer.actual_data.values():
                     coords = measurement['coordinates'].values
-                    point_list.extend(coords)
+                    coords_list.extend(coords)
+                    point_list.append(measurement)
+                    measurements.extend(measurement.columns)
 
             elif isinstance(importer, WeatherDataImporter):
                 lat = importer.actual_data['latitude'].apply(pd.to_numeric, args=('coerce',)).values
                 lon = importer.actual_data['longitude'].apply(pd.to_numeric, args=('coerce',)).values
-                point_list.extend(zip(lat, lon))
+                coords_list.extend(zip(lat, lon))
+                point_list.append(importer.actual_data)
+                measurements.extend(importer.actual_data.columns)
 
-        point_list = np.array(point_list)
-        dist_matrix = np.zeros((point_list.shape[0], point_list.shape[0]))
-        for index_i, point_i in enumerate(point_list):
-            for index_j, point_j in enumerate(point_list):
+        coords_list = np.array(coords_list)
+        dist_matrix = np.zeros((coords_list.shape[0], coords_list.shape[0]))
+        for index_i, point_i in enumerate(coords_list):
+            for index_j, point_j in enumerate(coords_list):
                 dist_matrix[index_i, index_j] = self.haversine(point_i, point_j)
                 #         dist_matrix = squareform(pdist(point_list))
         np.fill_diagonal(dist_matrix, np.inf)
@@ -304,9 +311,9 @@ class DataMerger:
         min_point_distances = dist_matrix[np.arange(dist_matrix.shape[0]), min_point_idx]
         min_point_distances_mean = np.mean(min_point_distances)
         min_point_distances_std = np.std(min_point_distances)
-        clust = fclusterdata(point_list, t=clust_radius, criterion='distance', metric=self.haversine)
+        clust = fclusterdata(coords_list, t=clust_radius, criterion='distance', metric=self.haversine)
 
-        return min_point_idx, min_point_distances, min_point_distances_mean, min_point_distances_std, clust
+        return clust, point_list, measurements
 
     @staticmethod
     def haversine(point1, point2):
@@ -328,30 +335,58 @@ class DataMerger:
 
         return km
 
-    def organize_map_measurements(self):
+    def organize_map_measurements(self, clust_radius=0.05):
 
         point_list = {}
 
-        for importer in self.importers:
+        clust, point_list, measurements = self.compute_minimum_point_distance(clust_radius)
 
-            if isinstance(importer, WaterLevelImporter):
+        point_index = 0
 
-                for measurement in importer.actual_data.values():
+        print(measurements)
 
-                    for index, coords in enumerate(measurement['coordinates']):
-                        coords = np.float32(coords)
-                        point_list = self.insert_into_point_list(coords, measurement.iloc[index], point_list)
+        measurements = pd.Series(measurements).unique()
 
-            elif isinstance(importer, WeatherDataImporter):
+        df = pd.DataFrame(columns=measurements)
 
-                data = importer.actual_data
+        for data in point_list:
 
-                for index, coords in enumerate(
-                        zip(data['latitude'], data['longitude'])):  # done this way for efficiency
-                    coords = np.array(coords)
-                    point_list = self.insert_into_point_list(coords, data.iloc[index], point_list)
+            for index, row in data.iterrows():
+                labels = list(row.axes[0])
+                point_clust = clust[point_index]
+                df.loc[point_clust, labels] = row.values
+                point_index = point_index + 1  # use loc to update column/ values
+                if 'coordinates' in labels:
+                    df.loc[point_clust, ['latitude', 'longitude']] = row['coordinates']
+        df['datetime'] = df[['datetime', 'date_time']].fillna('').sum(axis=1)
+        df.drop('coordinates', axis=1, inplace=True)
+        df.drop('date_time', axis=1, inplace=True)
 
-        return point_list
+        #         for index, point in enumerate(point_list):
+
+        #             point =dict(zip(point[0], point[1]))
+        #             df.append(point, ignore_index=True)
+
+        #         for importer in self.importers:
+
+        #             if isinstance(importer, WaterLevelImporter):
+
+        #                 for measurement in importer.actual_data.values():
+
+        #                     for index, coords in enumerate(measurement['coordinates']):
+
+        #                         coords = np.float32(coords)
+        #                         point_list = self.insert_into_point_list(coords, measurement.iloc[index], point_list)
+
+        #             elif isinstance(importer, WeatherDataImporter):
+
+        #                 data = importer.actual_data
+
+        #                 for index, coords in enumerate(zip(data['latitude'], data['longitude'])): # done this way for efficiency
+        #                     coords = np.array(coords)
+        #                     point_list = self.insert_into_point_list(coords, data.iloc[index], point_list)
+
+        return df
 
     @staticmethod
     def hash_point(point):
