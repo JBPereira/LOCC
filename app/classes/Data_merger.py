@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 #import requests
-#import datetime
+from datetime import datetime
 #import os
 #from functools import reduce
 #import operator
@@ -83,6 +83,15 @@ class DataMerger:
         # Radius of earth in kilometers is 6371
         km = 6371 * c
         return km
+    
+    @staticmethod
+    def convert_datetime_to_same(dateori):
+        if " " in dateori:
+            datetime_object = datetime.strptime(dateori, '%m/%d/%Y %H:%M:%S')
+            date = datetime_object.strftime('%Y-%m-%dT%H:%M:%SZ')
+        else:
+           date = dateori
+        return date
 
     def organize_map_measurements(self, clust_radius=0.05):
         point_list = {}
@@ -101,7 +110,9 @@ class DataMerger:
                     df.loc[point_clust, ['latitude', 'longitude']] = row['coordinates']
         df['datetime'] = df[['datetime', 'date_time']].fillna('').sum(axis=1)
         df.drop('coordinates', axis=1, inplace=True)
+
         df.drop('date_time', axis=1, inplace=True)
+        df['datetime'] = list(map(lambda x: self.convert_datetime_to_same(x),df['datetime']))
         return df
 
     @staticmethod

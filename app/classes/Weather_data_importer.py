@@ -49,7 +49,11 @@ class WeatherDataImporter(DataImporter):
             for station in weather_station_data:
                 new_entry = {}
                 for column, measurement in self.data_columns.items():
-                    new_entry[column] = station[measurement]
+                    station_measurement = station[measurement]
+                    if station_measurement == '-':
+                        new_entry[column] = None
+                    else:                    
+                        new_entry[column] = station[measurement]
                 actual_data = actual_data.append(new_entry, ignore_index=True)
             if self.actual_data:
                 self.actual_data.append(actual_data, ignore_index=True)

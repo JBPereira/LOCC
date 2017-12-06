@@ -88,7 +88,7 @@ def logout():
 @app.route('/update')
 def update():
     update_all_data()
-    return redirect(url_for('index'))
+    return redirect(request.referrer)
 
    
    
