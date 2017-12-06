@@ -1,0 +1,4 @@
+#ignore data
+*.csv
+#ignore jupyter notebooks
+*.ipynb
