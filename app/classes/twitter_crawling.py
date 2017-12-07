@@ -24,7 +24,7 @@ class TwitterCrawler(object):
         for word in self.flood_words:
             word_search = self.api.search(word)
             for status in word_search:
-                flood_search.append(status.text)
+                flood_search.append({'text':status.text, 'location': status.author.location})
 
         return flood_search
 
