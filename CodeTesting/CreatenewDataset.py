@@ -11,7 +11,7 @@ import folium
 from math import radians, cos, sin, asin, sqrt
 import time
 import re
-
+import numpy as np
 
 def convert_datetime_to_same(dateori):
     datetime_object = datetime.datetime.strptime(dateori, '%Y%m%d')
@@ -20,6 +20,7 @@ def convert_datetime_to_same(dateori):
 
 
 def lat_lon_convert(x):
+    print(x)
     lat,lon = utm.to_latlon(x[0],x[1],31,'U')
     return lat,lon
 
@@ -71,9 +72,6 @@ def read_weather_data():
     WeaterData.drop_duplicates()
     return WeaterData 
     ##end creting weather data
-
-IncidentData = pd.read_csv("List_of_large_incidents_in_NL.csv",  sep = ";",encoding='utf-8')
-IncidentData = IncidentData[IncidentData['Incident type'].str.contains("Overstroming")] 
 
 def read_water_data():
     ##start Creating water level data set
@@ -128,60 +126,101 @@ def inefficient_table_creator(dataframe1,dataframe2):
             &(dataframe1['DATE']==DateTimeWL[0])&(dataframe1['TIME']==DateTimeWL[1])].iloc[0]
         dfWater['Distance'] = shortest_distance
         AllDataFrame = AllDataFrame.append(pd.concat([dfWeather,dfWater],ignore_index=False),ignore_index=True)
-        end = time.time()
+        
+        #end = time.time()
         print(end - start)
     return AllDataFrame
 
+def create_distance_table(dataset1,dataset2):
+    WLdataNoDups = dataset1.drop_duplicates(['LAT','LON'])
+    WeatherdataNoDups =  dataset2.drop_duplicates(['LAT','LON'])
+
+    AllDistDataFrame = pd.DataFrame()
+
+    for latWat,lonWat in zip(WLdataNoDups['LAT'],WLdataNoDups['LON']):
+        MyPoint = (latWat,lonWat)                 
+        pointInstance = pd.DataFrame(WeatherdataNoDups.loc[:,['LAT','LON']].apply(lambda x: haversine(MyPoint,(x)),axis=1))
+        pointNames = pd.DataFrame(WeatherdataNoDups.loc[pointInstance.index.values]['Name'])
+        pointBoth = pointInstance.join(pointNames).sort_values(0)
+        pointTuple = pd.DataFrame([list(zip(pointBoth['Name'],pointBoth[0]))])
+        pointTuple['WLName'] = WLdataNoDups[WLdataNoDups['LAT']==latWat]['Name'].tolist()
+        AllDistDataFrame = AllDistDataFrame.append(pointTuple,ignore_index =True)
+
+    AllDistDataFrame = AllDistDataFrame.set_index('WLName')
+    return AllDistDataFrame 
+
+def more_efficient_table_creator(dataframe1,dataframe2,DistanceTable):
+    AllDistDataFrame = create_distance_table(dataframe1,dataframe2)
+    print(AllDistDataFrame.shape)
+    AllDataFrame = pd.DataFrame(columns = list(['WindSpeed', 'Temp', 'Sunshine', 'Precipitation', 'SeaLevelPressure', 'Humidity', 'Evapotranspiration','Distance']) + list(WLdata.columns))    
+    
+    for row in dataframe1.iterrows():
+        #Start For:
+        startfor = time.time()
+        #Start Step one:
+        #start = time.time()
+        WeatherAtDate = dataframe2[(dataframe2['DATE']== row[1]['DATE'])].drop_duplicates(['Name'])
+        #end = time.time()
+        #print('End step one:', end - start)
+        
+        #Start step 2:
+        #start = time.time()
+        for i in range(0,50):
+            try:
+                DistanceTuple = list(AllDistDataFrame[AllDistDataFrame.index.str.contains(row[1]['Name'],False)][i])[0]
+                dfWeather = WeatherAtDate[WeatherAtDate['Name']==DistanceTuple[0]]
+                if dfWeather.empty:            
+                    raise ValueError('Weather at data was empty.')
+                dfWeather['Distance']= DistanceTuple[1]
+                break
+            except:
+                    #print('PROBLEMS!!')
+                continue
+        #end = time.time()
+        #print('End step two:', end - start)
+        
+        dfWeather = dfWeather.drop(['LAT','LON','DATE','TIME','Name'],axis=1)
+        AllDataFrame = AllDataFrame.append(pd.concat([dfWeather.iloc[0],row[1]],ignore_index=False),ignore_index=True)
+        end = time.time()
+        print('End of For:',end - startfor)
+    return AllDataFrame  
+
+IncidentData = pd.read_csv("List_of_large_incidents_in_NL.csv",  sep = ";",encoding='utf-8')
+IncidentData = IncidentData[IncidentData['Incident type'].str.contains("Overstroming")] 
+IncidentData['Date start'] = IncidentData.apply(lambda x: datetime.datetime.strptime(x['Date start'],'%d-%b-%y').strftime('%d-%m-%Y'),axis = 1)
+IncidentData['Date end'] = IncidentData.apply(lambda x: datetime.datetime.strptime(x['Date end'],'%d-%b-%y').strftime('%d-%m-%Y'),axis = 1)
+
+IncidentData['Date start'] = IncidentData['Date start'].replace('17-02-2062','17-02-1962')
+IncidentData['Date start'] = IncidentData['Date start'].replace('17-02-2053','17-02-1953')
+IncidentData['Date end'] = IncidentData['Date end'].replace('17-02-2062','17-02-1962')
+IncidentData['Date end'] = IncidentData['Date end'].replace('02-02-2053','02-02-1953')
+
+#IncidentData[['X','Y']].apply(lambda x: lat_lon_convert(x),axis=1)
+#lat,lon = utm.to_latlon(207894,610421,31,'U')
+
 WLdata = read_water_data()
 WeatherData = read_weather_data()
+
 #AllDataFrame = inefficient_table_creator(WLdata ,WeatherData)
 
 WLdata.head()
 WeatherData.head()
-WLdataNoDups = WLdata.drop_duplicates(['LAT','LON'])
-WeatherdataNoDups =  WeatherData.drop_duplicates(['LAT','LON'])
 
-AllDistDataFrame = pd.DataFrame()
+WLdataSnippet = WLdata[(WLdata['LAT']>=51.5) & (WLdata['LAT']<52) &(WLdata['LON']<=5)&(WLdata['LON']>4.5)]
+WLdataSnippet = WLdataSnippet[(WLdataSnippet['DATE'].str.contains('1953'))|(WLdataSnippet['DATE'].str.contains('1962'))]
+WeatherDataSnippet = WeatherData[(WeatherData['DATE'].str.contains('1953'))|(WeatherData['DATE'].str.contains('1962'))]
 
-for latWat,lonWat in zip(WLdataNoDups['LAT'],WLdataNoDups['LON']):
-    start = time.time()
-    shortest_distance = None
-    shortest_distance_coordinates = None
-    MyPoint = (latWat,lonWat)  
-            
-    pointInstance = pd.DataFrame(WeatherdataNoDups.loc[:,['LAT','LON']].apply(lambda x: haversine(MyPoint,(x)),axis=1))
-    pointNames = pd.DataFrame(WeatherdataNoDups.loc[pointInstance.index.values]['Name'])
-    pointBoth = pointInstance.join(pointNames).sort_values(0)
-    pointTuple = pd.DataFrame([list(zip(pointBoth['Name'],pointBoth[0]))])
-    pointTuple['WLName'] = WLdataNoDups[WLdataNoDups['LAT']==latWat]['Name'].tolist()
-    AllDistDataFrame = AllDistDataFrame.append(pointTuple,ignore_index =True)
+AllDataFrame = more_efficient_table_creator(WLdataSnippet,WeatherDataSnippet)
 
-AllDistDataFrame = AllDistDataFrame.set_index('WLName')
+#AllDataFrame
 
-AllDataFrame = pd.DataFrame(columns = list(['WindSpeed', 'Temp', 'Sunshine', 'Precipitation', 'SeaLevelPressure', 'Humidity', 'Evapotranspiration','Distance']) + list(WLdata.columns))    
-dataframe1  = WLdata
-dataframe2 =  WeatherData
-start = time.time()
-for row in dataframe1.iterrows():
-    WeatherAtDate = dataframe2[(dataframe2['DATE']== row[1]['DATE'])].drop_duplicates(['Name'])
-    for i in range(0,50):
-        try:
-            DistanceTuple = list(AllDistDataFrame[AllDistDataFrame.index.str.contains(row[1]['Name'],False)][i])[0]
-            dfWeather = WeatherAtDate[WeatherAtDate['Name']==DistanceTuple[0]]
-            if dfWeather.empty:            
-                raise ValueError('Weather at data was empty.')
-            dfWeather['Distance']= DistanceTuple[1]
-            break
-        except:
-            #print('PROBLEMS!!')
-            continue
+WeatherDataNoDateDups = WeatherData.drop_duplicates('DATE')
+MultiindexTuples = list(zip(WeatherData['DATE'],WeatherData['Name']))
+index = pd.MultiIndex.from_tuples(MultiindexTuples, names=['Date', 'Place'])
+WeatherData = WeatherData.set_index(index)
+WeatherData.columns
 
-    dfWeather = dfWeather.drop(['LAT','LON','DATE','TIME','Name'],axis=1)
-    dfWater = row[1]
-    AllDataFrame = AllDataFrame.append(pd.concat([dfWeather.iloc[0],dfWater],ignore_index=False),ignore_index=True)
-
-end = time.time()
-print(end - start)
+           
 
 
 #WLdata.shape
