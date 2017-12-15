@@ -100,36 +100,38 @@ def read_water_data():
     WLdata = WLdata.drop('Y',axis = 1)
     
     WLdata.rename(columns={'MEETPUNT_IDENTIFICATIE': 'Name', 'WAARNEMINGDATUM': 'DATE', 'WAARNEMINGTIJD': 'TIME', 'NUMERIEKEWAARDE': 'WaterLevel'}, inplace=True)
-    WLdata['Name'] = WLdata['Name'].apply(lambda x : re.sub('[(){}<>]', '', x))
+    WLdata['Name'] = WLdata['Name'].apply(lambda x: re.sub('[(){}<>]', '', x))
     WLdata.drop_duplicates()
     WLdata.columns ## Can I delete this?
     return WLdata
     ## end creating Water level dataset
 
-def inefficient_table_creator(dataframe1,dataframe2):
+
+def inefficient_table_creator(df_water, df_weather):
     AllDataFrame = pd.DataFrame(columns = list(['WindSpeed', 'Temp', 'Sunshine', 'Precipitation', 'SeaLevelPressure', 'Humidity', 'Evapotranspiration','Distance']) + list(WLdata.columns))
     #AllDataFrame.drop(['LAT','LON','DATE','TIME'],axis=1)
 
     for latWat, lonWat, dateWat, timeWat in zip(dataframe1['LAT'], dataframe1['LON'], dataframe1['DATE'], dataframe1['TIME']):
-        start = time.time()
-        shortest_distance = None
-        shortest_distance_coordinates = None
-        MyPoint = (latWat,lonWat)  
-        DateTimeWL = (dateWat,timeWat)
+
+        start_time = time.time()
+        MyPoint = (latWat, lonWat)
+        DateTimeWL = (dateWat, timeWat)
         WeatherAtDate = dataframe2[(dataframe2['DATE']== DateTimeWL[0])].drop_duplicates(['LAT','LON'])
         
-        pointInstance = WeatherAtDate.loc[:,['LAT','LON']].apply(lambda x: haversine(MyPoint,(x)),axis=1)
-        shortest_distance  = pointInstance.min()
-        shortest_distance_coordinates = (WeatherAtDate.loc[pointInstance.argmin()]['LAT'],WeatherAtDate.loc[pointInstance.argmin()]['LON'])
+        pointInstance = WeatherAtDate.loc[:, ['LAT', 'LON']].apply(lambda x: haversine(MyPoint, (x)),axis=1)
+        shortest_index = pointInstance.argmin()  # find argument of min first no need to compute min again
+        shortest_distance = pointInstance[shortest_index]
+        closest_weather_point = WeatherAtDate.loc[shortest_index]  # get point, no need to find it twice with loc
+        shortest_distance_coordinates = (closest_weather_point['LAT'], closest_weather_point['LON'])
         
-        dfWeather = WeatherAtDate[WeatherAtDate['LAT'] == shortest_distance_coordinates[0]].iloc[0]
-        dfWeather = dfWeather.drop(['LAT','LON','DATE','TIME','Name'])
-        dfWater = dataframe1[(dataframe1['LAT']==MyPoint[0]) & (dataframe1['LON']==MyPoint[1])
+        dfWeather = WeatherAtDate[WeatherAtDate['LAT'] == shortest_distance_coordinates[0]].iloc[0]  # selects all points with same lat?
+        dfWeather = dfWeather.drop(['LAT', 'LON', 'DATE', 'TIME', 'Name'])
+        dfWater = df_water[(dataframe1['LAT']==MyPoint[0]) & (df_water['LON'] == MyPoint[1])
             &(dataframe1['DATE']==DateTimeWL[0])&(dataframe1['TIME']==DateTimeWL[1])].iloc[0]
         dfWater['Distance'] = shortest_distance
         AllDataFrame = AllDataFrame.append(pd.concat([dfWeather,dfWater],ignore_index=False),ignore_index=True)
         end = time.time()
-        print(end - start)
+        print(end - start_time)
     return AllDataFrame
 
 WLdata = read_water_data()
@@ -138,8 +140,8 @@ WeatherData = read_weather_data()
 
 WLdata.head()
 WeatherData.head()
-WLdataNoDups = WLdata.drop_duplicates(['LAT','LON'])
-WeatherdataNoDups =  WeatherData.drop_duplicates(['LAT','LON'])
+WLdataNoDups = WLdata.drop_duplicates(['LAT', 'LON'])
+WeatherdataNoDups = WeatherData.drop_duplicates(['LAT', 'LON'])
 
 AllDistDataFrame = pd.DataFrame()
 
