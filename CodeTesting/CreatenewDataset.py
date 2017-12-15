@@ -44,7 +44,7 @@ def read_weather_data():
     ##Start creating weather data
     wd_columns_to_keep = ['   FG','   TG','   SQ','   RH','   PG','   UX',' EV24','YYYYMMDD','# STN']
     WeaterData = pd.read_csv("KNMI_20171203 - Copy.csv",sep = ";")
-    WeaterData.columns
+    WeaterData.columns ## Can I delete this?
     WeaterData = WeaterData[wd_columns_to_keep]
     
     STNDict = pd.read_csv('STNcoor.csv',sep= ';')
@@ -93,7 +93,7 @@ def read_water_data():
     WLdata['Y'] = WLdata['Y'].map(lambda x: float(x.replace(",",".")))
     WLdata['X'] = WLdata['X'].map(lambda x: float(x.replace(",",".")))
     
-    aaa = WLdata[['X','Y']].apply(lat_lon_convert,axis = 1)
+    aaa = WLdata[['X','Y']].apply(lat_lon_convert,axis = 1) # can I rename it to something more descriptive?
     WLdata['LAT'] = [item[0] for item in aaa]
     WLdata['LON'] = [item[1] for item in aaa]
     WLdata = WLdata.drop('X',axis = 1)
@@ -102,7 +102,7 @@ def read_water_data():
     WLdata.rename(columns={'MEETPUNT_IDENTIFICATIE': 'Name', 'WAARNEMINGDATUM': 'DATE', 'WAARNEMINGTIJD': 'TIME', 'NUMERIEKEWAARDE': 'WaterLevel'}, inplace=True)
     WLdata['Name'] = WLdata['Name'].apply(lambda x : re.sub('[(){}<>]', '', x))
     WLdata.drop_duplicates()
-    WLdata.columns
+    WLdata.columns ## Can I delete this?
     return WLdata
     ## end creating Water level dataset
 
@@ -110,7 +110,7 @@ def inefficient_table_creator(dataframe1,dataframe2):
     AllDataFrame = pd.DataFrame(columns = list(['WindSpeed', 'Temp', 'Sunshine', 'Precipitation', 'SeaLevelPressure', 'Humidity', 'Evapotranspiration','Distance']) + list(WLdata.columns))
     #AllDataFrame.drop(['LAT','LON','DATE','TIME'],axis=1)
 
-    for latWat,lonWat,dateWat,timeWat in zip(dataframe1['LAT'],dataframe1['LON'],dataframe1['DATE'],dataframe1['TIME']):
+    for latWat, lonWat, dateWat, timeWat in zip(dataframe1['LAT'], dataframe1['LON'], dataframe1['DATE'], dataframe1['TIME']):
         start = time.time()
         shortest_distance = None
         shortest_distance_coordinates = None
